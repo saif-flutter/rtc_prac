@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:sdp_transform/sdp_transform.dart';
 
 class Homepage extends StatefulWidget {
   const Homepage({Key? key}) : super(key: key);
@@ -15,6 +16,9 @@ class _HomepageState extends State<Homepage> {
   late MediaStream _localStream;
   final _remoteRendrer=RTCVideoRenderer();
   late RTCPeerConnection _peerConnection;
+  final sdpController=TextEditingController();
+  bool _offer=false;
+  bool added=true;
   @override
   void initState() {
     initRenderers();
@@ -53,19 +57,116 @@ class _HomepageState extends State<Homepage> {
               left: 0,
               bottom: 0,
               child: RTCVideoView(
-                _remoteRendrer
+                _remoteRendrer,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                filterQuality: FilterQuality.medium,
+                mirror: true,
               )
           ),
           Positioned(
             top: 20,
             right: 20,
-            height: 200,
-            width: 100,
+            height: MediaQuery.of(context).size.height*0.2,
+            width: MediaQuery.of(context).size.width*0.2,
             child: RTCVideoView(
-              _localRendrer
+              _localRendrer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              filterQuality: FilterQuality.medium,
+              mirror: true,
             ),
           ),
 
+          Positioned(
+            right: 0,
+            left: 0,
+            bottom: 0,
+            height: MediaQuery.of(context).size.height*0.4,
+            child: Visibility(
+              visible: added,
+              child: Container(
+                decoration:  BoxDecoration(
+                  borderRadius:const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20)
+                  ),
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.5),
+                      spreadRadius: 2,
+                      blurRadius: 5
+                    )
+                  ]
+                ),
+                child: Column(
+                  children: [
+                   const  Spacer(),
+                    Expanded(
+                     flex: 2,
+                      child: TextField(
+                        maxLines: 4,
+                        controller: sdpController,
+                        decoration: const InputDecoration(
+                          hintText: "Enter your text here"
+                        ),
+                      ),
+                    ),
+
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              child: MaterialButton(
+                                color: Colors.blue,
+                                textColor: Colors.white,
+                                onPressed: _createOffer,
+                                child: Text("offer"),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              child: MaterialButton(
+                                color: Colors.blue,
+                                textColor: Colors.white,
+                                onPressed: _createAnswer,
+                                child: Text("Answer"),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              child: MaterialButton(
+                                color: Colors.blue,
+                                textColor: Colors.white,
+                                onPressed: _setRemoteDescription,
+                                child: const FittedBox(child: Text("Set Description")),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding:const EdgeInsets.symmetric(horizontal: 10),
+                              child: MaterialButton(
+                                color: Colors.blue,
+                                textColor: Colors.white,
+                                onPressed: _addCandidate,
+                                child: FittedBox(child: Text("Set Candidate")),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          )
         ],
       ),
     );
@@ -93,7 +194,7 @@ class _HomepageState extends State<Homepage> {
         print(jsonEncode({
           'candidate':e.candidate.toString(),
           'sdpMid':e.sdpMid.toString(),
-          'sdpMLineIndex':e.sdpMLineIndex.toString(),
+          'sdpMLineIndex':e.sdpMLineIndex,
         }));
       }
     };
@@ -106,5 +207,51 @@ class _HomepageState extends State<Homepage> {
     };
 
     return pc;
+  }
+
+
+  void _createOffer() async {
+    RTCSessionDescription description =
+    await _peerConnection!.createOffer({'offerToReceiveVideo': 1});
+    var session = parse(description.sdp.toString());
+    print(json.encode(session));
+    _offer = true;
+
+    _peerConnection.setLocalDescription(description);
+  }
+
+  void _createAnswer() async {
+    RTCSessionDescription description =
+    await _peerConnection!.createAnswer({'offerToReceiveVideo': 1});
+
+    var session = parse(description.sdp.toString());
+    print(json.encode(session));
+
+    _peerConnection!.setLocalDescription(description);
+  }
+
+  void _setRemoteDescription() async {
+    String jsonString = sdpController.text;
+    dynamic session = await jsonDecode('$jsonString');
+
+    String sdp = write(session, null);
+
+    RTCSessionDescription description =
+    new RTCSessionDescription(sdp, _offer ? 'answer' : 'offer');
+    print(description.toMap());
+
+    await _peerConnection!.setRemoteDescription(description);
+  }
+
+  void _addCandidate() async {
+    String jsonString = sdpController.text;
+    dynamic session = await jsonDecode('$jsonString');
+    print(session['candidate']);
+    dynamic candidate =  RTCIceCandidate(
+        session['candidate'], session['sdpMid'], session['sdpMlineIndex']);
+    await _peerConnection!.addCandidate(candidate);
+    setState(() {
+      added=false;
+    });
   }
 }
